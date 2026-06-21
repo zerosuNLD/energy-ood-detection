@@ -1,0 +1,532 @@
+\documentclass[12pt,a4paper]{article}
+
+% ── Encoding & Language ──────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+
+% ── Math & Graphics ──────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{adjustbox}
+
+% ── Page Layout ──────────────────────────────────────────────────────
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
+
+% ── Header & Footer ──────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Báo Cáo Project -- Nhóm 7}}
+\fancyhead[R]{\small\thepage}
+\fancyfoot[C]{\small\textit{Energy-based Out-of-distribution Detection}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% ── Typography ───────────────────────────────────────────────────────
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{microtype}
+\usepackage{parskip}
+\setlength{\parskip}{6pt}
+
+% ── Section Formatting ───────────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.8em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection.}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\itshape\bfseries}{\thesubsubsection.}{0.5em}{}
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+\titlespacing*{\subsection}{0pt}{12pt}{6pt}
+
+% ── Table of Contents ────────────────────────────────────────────────
+\usepackage{tocloft}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforesecskip}{4pt}
+
+% ── Hyperlinks ───────────────────────────────────────────────────────
+\usepackage{xcolor}
+\usepackage[unicode]{hyperref}
+\hypersetup{
+  pdftitle={Báo Cáo Project},
+  pdfauthor={Nhóm 7},
+  colorlinks=true,
+  linkcolor=blue,
+  filecolor=magenta,      
+  urlcolor=cyan,
+  citecolor=blue
+}
+
+% ── Bibliography ─────────────────────────────────────────────────────
+\usepackage{cite}
+
+% ════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Title Page ───────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\LARGE\bfseries Báo Cáo Project\par}
+  \vspace{0.5cm}
+  \rule{0.6\textwidth}{0.8pt}
+  \vspace{1.5cm}
+
+  {\large\itshape Energy-based Out-of-distribution Detection\par}
+  \vspace{2cm}
+
+  {\large Nhóm 7\par}
+  \vspace{0.8cm}
+  {\large \today\par}
+
+  \vfill
+  \rule{0.4\textwidth}{0.4pt}
+\end{titlepage}
+
+\thispagestyle{empty}
+\newpage
+
+% ── Table of Contents ────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ════════════════════════════════════════════════════════════════════
+\section{Abstract}
+
+Báo cáo này tái thực nghiệm phương pháp phát hiện OOD dùng energy score, được đề xuất trong bài báo của Liu et al.~\cite{energyood}. Phương pháp được đánh giá trên mô hình WideResNet-28-10 huấn luyện trên CIFAR-10, với các tập OOD gồm SVHN, LSUN và Tiny-ImageNet. Kết quả cho thấy Energy Score vượt trội hơn MSP baseline trên LSUN (FPR95 giảm từ 21,87\% xuống 15,26\%), trong khi MSP tốt hơn trên SVHN. Trên Tiny-ImageNet, hai phương pháp cho kết quả tương đối gần nhau. Điều này cho thấy hiệu quả của từng scoring function phụ thuộc vào đặc trưng của tập OOD, thay vì một phương pháp luôn trội hơn trong mọi trường hợp. Kết quả gốc từ bài báo \cite{energyood} cũng cho thấy energy score giảm FPR trung bình (tại TPR = 95\%) xuống 18.03\% so với softmax confidence score khi huấn luyện với energy-bounded learning.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Giới thiệu về Energy Score}
+Phần này trình bày softmax confidence score, energy score và so sánh hai cách tiếp cận. 
+
+\subsection{Softmax confidence score trong bài toán phân loại}
+
+Ở các mô hình phân loại sâu, đầu ra trước khi qua lớp softmax thường là một vector logit:
+\[
+f(x) = [f_1(x), f_2(x), \ldots, f_K(x)] \in \mathbb{R}^K,
+\]
+Trong đó, $K$ là số lớp của bài toán và $f_k(x)$ biểu diễn mức độ mà mô hình gán cho lớp $k$ của mẫu $x$.
+
+Sau khi qua hàm softmax, ta thu được xác suất dự đoán của từng lớp:
+\[
+p(y=k \mid x) = \frac{e^{f_k(x)}}{\sum_{i=1}^{K} e^{f_i(x)}}.
+\]
+
+Giá trị thường được dùng để đo confidence của mô hình là:
+\[
+s_{\text{softmax}}(x) = \max_{k} p(y=k \mid x).
+\]
+Nếu giá trị này lớn, mô hình được xem là có confidence cao đối với dự đoán của mình.
+
+Softmax chỉ phản ánh tương quan giữa các logit, không cho biết độ lớn tuyệt đối của chúng. Điểm hạn chế là mô hình vẫn có thể confident cao dù đầu vào thuộc ngoài phân phối huấn luyện. Hiện tượng này thường được gọi là \textit{overconfidence}.
+
+\subsection{Vì sao softmax dễ bị overconfident?}
+
+Xét ví dụ một mô hình hai lớp \textit{cat} và \textit{dog}. Giả sử mạng CNN đầu ra vector logit:
+\[
+f(x) = [15, 1].
+\]
+Sau khi qua softmax:
+\[
+p(\text{cat} \mid x) = \frac{e^{15}}{e^{15} + e^1}, \qquad
+p(\text{dog} \mid x) = \frac{e^1}{e^{15} + e^1}.
+\]
+Kết quả xấp xỉ là:
+\[
+p(\text{cat} \mid x) \approx 0.9999, \qquad
+p(\text{dog} \mid x) \approx 0.0001.
+\]
+Khi đó, mô hình gần như chắc chắn sẽ dự đoán mẫu này là \textit{cat}.
+
+Tuy nhiên, ngay cả trong trường hợp vector logit là:
+\[
+f(x) = [1, -15],
+\]
+softmax vẫn cho ra:
+\[
+p(\text{cat} \mid x) = \frac{e^1}{e^1 + e^{-15}} \approx 0.9999997, \qquad
+p(\text{dog} \mid x) = \frac{e^{-15}}{e^1 + e^{-15}} \approx 0.0000003.
+\]
+Softmax có thể cho confidence rất cao ngay cả khi vector logit không phản ánh đúng mức độ familiarity của đầu vào.
+
+Chỉ cần một logit lớn hơn các logit còn lại đủ nhiều, softmax đã có thể tạo ra xác suất rất cao. Trong thực tế, các mô hình deep learning có thể tạo ra logit có biên độ lớn ngay cả với đầu vào lạ, nhiễu hoặc hoàn toàn ngoài phân phối huấn luyện. Khi đó, softmax vẫn có thể trả về xác suất cao, khiến mô hình trở nên \textit{overconfident}.
+
+Điểm chính là softmax chỉ nhìn vào chênh lệch giữa các logit. Nó không quan tâm đến việc toàn bộ vector logit đang ở mức cao hay thấp. Vì vậy, mẫu OOD vẫn có thể bị softmax gán xác suất rất cao.
+
+\subsection{Hạn chế của softmax trong phát hiện OOD}
+
+Trong bài toán phát hiện OOD, ta không chỉ cần biết mô hình dự đoán lớp nào mà còn cần biết mức độ familiarity của đầu vào đối với mô hình. Một đầu vào có thể được phân loại rất confident nhưng vẫn là một mẫu chưa từng xuất hiện trong quá trình huấn luyện.
+
+Softmax confidence score không đo trực tiếp ``familiarity'' này. Lý do là:
+
+\begin{itemize}
+  \item Softmax chuẩn hóa các logit thành xác suất, nên làm mất thông tin về độ lớn tuyệt đối của logit.
+  \item Nếu tất cả logits cùng tăng thêm một hằng số, xác suất softmax không đổi dù đầu ra của mô hình đã thay đổi đáng kể.
+  \item Mô hình neural network có thể học các vùng không gian đầu vào mà ở đó logit rất lớn, dẫn đến xác suất đầu ra cao ngay cả với dữ liệu lạ.
+\end{itemize}
+
+Do đó, softmax không đủ tốt nếu chỉ dùng một mình cho OOD detection.
+
+\subsection{Energy score: công thức và trực giác}
+
+Energy score lấy trực tiếp từ vector logit, nên dùng được thông tin của toàn bộ đầu ra:
+\[
+E(x) = -T \log \sum_{i=1}^{K} e^{f_i(x)/T},
+\]
+trong đó $T>0$ là \textit{temperature}.
+
+Đây là dạng \textit{log-sum-exp} với dấu âm và tham số temperature. Hiểu đơn giản:
+
+\begin{itemize}
+  \item Nếu các logit của mẫu đầu vào đều lớn thì tổng $e^{f_i(x)/T}$ cũng lớn, do đó energy sẽ nhỏ.
+  \item Nếu các logit đều nhỏ, tổng trên sẽ nhỏ, nên energy sẽ lớn hơn.
+\end{itemize}
+
+Trong phương pháp phát hiện OOD, mẫu in-distribution thường tạo ra energy thấp hơn còn mẫu out-of-distribution thường tạo ra energy cao hơn. Ta cần xác định một ngưỡng (threshold) để phân loại đâu là OOD, như minh họa ở Hình~\ref{fig:placeholder}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth]{image.png}
+  \caption{Energy có thể được dùng như một scoring function cho bất kỳ mô hình neural network đã huấn luyện trước nào mà không cần huấn luyện lại, hoặc như một cost function có thể huấn luyện để fine-tune mô hình phân loại. Trong giai đoạn suy luận (inference), với một đầu vào $x$, energy score $E(x;f)$ được tính trực tiếp từ neural network $f(x)$. Bộ phát hiện OOD sẽ phân loại đầu vào là OOD nếu negative energy score nhỏ hơn ngưỡng đã thiết lập.}
+  \label{fig:placeholder}
+\end{figure}
+
+Energy score nhìn toàn bộ vector logit, không chỉ logit lớn nhất. Điều này giúp energy score khai thác được thông tin mà softmax đã bỏ qua.
+
+Xét hai vector logit:
+\[
+f(x_1) = [15, 1], \qquad f(x_2) = [1, -15].
+\]
+Cả hai đều có cùng một lớp trội hơn lớp còn lại, nên softmax có thể vẫn cho ra xác suất rất cao cho lớp tương ứng. Tuy nhiên, energy score sẽ khác nhau rõ rệt:
+\[
+E(x_1) = -\log(e^{15} + e^1) \approx -15.00,
+\]
+\[
+E(x_2) = -\log(e^1 + e^{-15}) \approx -1.00.
+\]
+
+Như vậy, $x_1$ có energy thấp vì toàn bộ logit đều ở mức cao, còn $x_2$ có energy cao hơn nhiều vì chỉ có một logit nhỏ dương trong khi logit kia rất thấp.
+
+Nếu xét thêm trường hợp:
+\[
+f(x_3) = [15, 15],
+\]
+thì:
+\[
+E(x_3) = -\log(2e^{15}) = -15 - \log 2 \approx -15.693.
+\]
+Ưu điểm của energy score là xét cả toàn bộ đầu ra, không chỉ lớp mạnh nhất. Điều này giúp energy score ổn định hơn trong một số trường hợp OOD.
+
+\subsection{Tính chất toán học của energy score}
+
+Energy score có vài tính chất đáng chú ý:
+
+\subsubsection{Monotonicity}
+
+Đạo hàm của energy theo từng logit là:
+\[
+\frac{\partial E(x)}{\partial f_i(x)}
+= -\frac{e^{f_i(x)/T}}{\sum_{j=1}^{K} e^{f_j(x)/T}}
+= -p_T(y=i \mid x),
+\]
+trong đó $p_T$ là softmax với temperature $T$.
+
+Vì $0 < p_T(y=i \mid x) < 1$, nên:
+\[
+\frac{\partial E(x)}{\partial f_i(x)} < 0.
+\]
+Nói cách khác, logit tăng thì energy giảm.
+
+Ngoài ra:
+\[
+\sum_{i=1}^{K} \frac{\partial E(x)}{\partial f_i(x)} = -1.
+\]
+Tổng các gradient theo các logit luôn bằng $-1$, cho thấy energy phân bổ ảnh hưởng của các lớp theo một cấu trúc nhất định chứ không phụ thuộc vào riêng một logit trội.
+
+\subsubsection{Invariance đối với softmax nhưng không invariant với energy}
+
+Softmax chỉ phụ thuộc vào chênh lệch giữa các logit. Nếu cộng cùng một hằng số $c$ vào mọi logit:
+\[
+f_i(x)' = f_i(x) + c,
+\]
+thì softmax không thay đổi:
+\[
+\frac{e^{f_i(x)+c}}{\sum_j e^{f_j(x)+c}}
+=
+\frac{e^{f_i(x)}}{\sum_j e^{f_j(x)}}.
+\]
+Softmax vì thế bỏ qua độ lớn tuyệt đối của logit.
+
+Ngược lại, energy thay đổi theo hằng số dịch:
+\[
+E'(x) = -T \log \sum_i e^{(f_i(x)+c)/T}
+= -T \log \left(e^{c/T}\sum_i e^{f_i(x)/T}\right)
+= E(x) - c.
+\]
+Ngược lại, energy vẫn giữ được thông tin về độ lớn của logit. Điều này quan trọng vì mẫu OOD thường cho logit thấp hơn hoặc kém ổn định hơn mẫu in-distribution.
+
+\subsubsection{Liên hệ với max logit}
+
+Khi $T$ tiến về 0, energy tiến gần đến giá trị âm của logit lớn nhất:
+\[
+E(x) \approx -\max_i f_i(x).
+\]
+Do đó, energy score có thể được xem là một phiên bản mềm hơn của việc lấy giá trị lớn nhất trong vector logit, nhưng vẫn tận dụng được thông tin từ toàn bộ các lớp.
+
+\subsection{Vai trò của temperature và so sánh với softmax}
+
+Temperature $T$ quyết định energy score mượt đến mức nào:
+
+\begin{itemize}
+  \item Nếu $T$ nhỏ, energy gần giống $-\max_i f_i(x)$, tức là chỉ chú ý mạnh đến lớp có logit lớn nhất.
+  \item Nếu $T$ lớn, energy trở nên mượt hơn và phản ánh đóng góp của nhiều lớp hơn.
+\end{itemize}
+
+Khi chọn $T$, thường cần cân bằng giữa hai mục tiêu:
+\begin{enumerate}
+  \item giữ được tính nhạy với mẫu OOD,
+  \item tránh việc score bị chi phối quá mức bởi một logit đơn lẻ.
+\end{enumerate}
+
+Có thể so sánh với softmax như sau:
+
+\begin{itemize}
+  \item \textbf{Softmax confidence} chỉ hỏi: \emph{lớp nào lớn nhất so với các lớp còn lại?}
+  \item \textbf{Energy score} hỏi: \emph{toàn bộ đầu ra của mô hình đang ở mức cao hay thấp?}
+\end{itemize}
+
+Trong OOD detection, dữ liệu OOD cần được nhận diện là không familiar, không chỉ bị phân loại sai. Mô hình có thể vẫn chọn ra một lớp nào đó cho mẫu OOD, nhưng nếu energy cao thì ta có thể suy ra rằng input này không giống dữ liệu huấn luyện.
+
+Mô hình học tốt hơn ở những vùng đặc trưng familiar của dữ liệu huấn luyện. Khi đầu vào mới nằm gần các vùng này, các logit thường rõ ràng hơn và energy có xu hướng thấp hơn.
+
+Ngược lại, mẫu OOD thường không khớp với không gian đặc trưng mà mô hình đã học, các lớp thường không kích hoạt mạnh và logit đầu ra thường thấp hơn hoặc không ổn định, nên energy sẽ cao hơn.
+
+Vì vậy, energy có thể dùng làm score để phát hiện OOD.
+
+% ════════════════════════════════════════════════════════════════════
+\section{Kết quả thực nghiệm}
+
+\subsection{Thiết lập thực nghiệm}
+
+Thực nghiệm được thực hiện trên máy cá nhân sử dụng GPU NVIDIA GeForce RTX 4060 Laptop. Mô hình cơ sở là WideResNet-28-10 (WRN-28-10), được huấn luyện trên CIFAR-10 trong 20 epoch với SGD, CosineAnnealingLR và weight decay $5{\times}10^{-4}$. Mô hình đạt độ chính xác 94,78\% trên tập kiểm tra CIFAR-10.
+
+Dữ liệu in-distribution ($\mathcal{D}^{\text{in}}$) là tập kiểm tra CIFAR-10, gồm 10.000 ảnh kích thước $32\times32$ thuộc 10 lớp. Dữ liệu out-of-distribution ($\mathcal{D}^{\text{out}}$) gồm ba tập: SVHN, LSUN và Tiny-ImageNet.
+\begin{itemize}
+    \item \textbf{SVHN} gồm 26.032 ảnh chữ số ngoài thực tế. Chúng tôi giữ nguyên toàn bộ tập kiểm tra để phản ánh đúng phân phối tự nhiên của dữ liệu.
+    \item \textbf{LSUN} gồm 10.000 ảnh cảnh vật và cấu trúc không gian, được đưa về kích thước $32\times32$ trước khi đưa vào WRN-28-10.
+    \item \textbf{Tiny-ImageNet} gồm 10.000 ảnh kiểm tra, được resize từ $64\times64$ xuống $32\times32$.
+\end{itemize}
+
+Tất cả ảnh đầu vào được z-normalization theo mean và std của CIFAR-10 ($\mu = (0{,}4914,\;0{,}4822,\;0{,}4465)$, $\sigma = (0{,}2023,\;0{,}1994,\;0{,}2010)$). Khi suy luận, không sử dụng data augmentation.
+
+Hai scoring function được so sánh trực tiếp trên cùng một mô hình mà không huấn luyện lại:
+\begin{itemize}
+  \item \textbf{Energy Score}~\cite{energyood}: $E(x) = -T\log\sum_{k=1}^{K}e^{f_k(x)/T}$, với các mức temperature $T \in \{0{,}5;\;1;\;2;\;3;\;4;\;5\}$.
+  \item \textbf{MSP -- Maximum Softmax Probability}: $s_{\text{MSP}}(x) = -\max_k p(y=k\mid x)$. Cả hai score được định nghĩa sao cho điểm càng cao, khả năng mẫu là OOD càng lớn. Ngưỡng $\gamma$ được xác định từ phân phối điểm của tập ID để đạt TPR = 95\%.
+\end{itemize}
+Các phương pháp được đánh giá bằng bốn chỉ số chính: FPR95, AUROC, Best F1 và AUPR. Mô hình được huấn luyện với seed cố định (42). Dải $T \in \{0{,}5; 1; 2; 3; 4; 5\}$ được chọn để khảo sát từ chế độ gần $-\max_k f_k(x)$ ($T$ nhỏ) đến chế độ làm mượt mạnh ($T$ lớn).
+
+\subsection{Kết quả định lượng tổng quan}
+
+Bảng~\ref{tab:temp_results} trình bày kết quả của Energy Score ở 6 mức temperature và so sánh trực tiếp với MSP baseline trên ba tập OOD.
+
+\begin{table}[H]
+  \centering
+  \caption{Kết quả so sánh chi tiết 4 chỉ số giữa MSP và Energy Score khi $T \in \{0{,}5;\;1;\;2;\;3;\;4;\;5\}$ trên ba tập dữ liệu OOD (SVHN, LSUN, Tiny-ImageNet). $\downarrow$: thấp hơn tốt hơn; $\uparrow$: cao hơn tốt hơn. Giá trị tốt nhất trong từng nhóm dataset được in \textbf{đậm}.}
+  \label{tab:temp_results}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{adjustbox}{max width=\linewidth}
+        \begin{tabular}{llcccc}
+    \hline
+    \textbf{Dataset OOD} & \textbf{Phương pháp} & \textbf{FPR95 (\%) $\downarrow$} & \textbf{AUROC (\%) $\uparrow$} & \textbf{Best F1 $\uparrow$} & \textbf{AUPR $\uparrow$} \\
+    \hline
+    \multirow{7}{*}{\textbf{SVHN}}
+    & MSP Baseline & \textbf{24,82} & \textbf{91,68} & \textbf{0,9324} & \textbf{0,9514} \\
+    & Energy ($T=0,5$) & 27,76 & 91,20 & 0,9252 & 0,9463 \\
+    & Energy ($T=1$) & 27,73 & 91,01 & 0,9252 & 0,9437 \\
+    & Energy ($T=2$) & 28,34 & 90,06 & 0,9237 & 0,9353 \\
+    & Energy ($T=3$) & 30,66 & 88,72 & 0,9196 & 0,9259 \\
+    & Energy ($T=4$) & 33,65 & 87,33 & 0,9146 & 0,9172 \\
+    & Energy ($T=5$) & 36,65 & 86,04 & 0,9096 & 0,9095 \\
+    \hline
+    \multirow{7}{*}{\textbf{LSUN}}
+    & MSP Baseline & 21,87 & 92,97 & 0,8764 & 0,9076 \\
+    & Energy ($T=0,5$) & 15,89 & 95,84 & 0,9024 & 0,9492 \\
+    & Energy ($T=1$) & 15,64 & 95,90 & 0,9036 & \textbf{0,9497} \\
+    & Energy ($T=2$) & \textbf{15,26} & \textbf{95,92} & \textbf{0,9053} & 0,9493 \\
+    & Energy ($T=3$) & 15,59 & 95,80 & 0,9034 & 0,9478 \\
+    & Energy ($T=4$) & 16,47 & 95,63 & 0,9003 & 0,9458 \\
+    & Energy ($T=5$) & 17,32 & 95,46 & 0,8967 & 0,9440 \\
+    \hline
+    \multirow{7}{*}{\textbf{Tiny-ImageNet}}
+    & MSP Baseline & \textbf{48,22} & 86,29 & \textbf{0,8100} & 0,8378 \\
+    & Energy ($T=0,5$) & 50,90 & \textbf{87,57} & 0,8085 & \textbf{0,8681} \\
+    & Energy ($T=1$) & 50,90 & \textbf{87,57} & 0,8085 & \textbf{0,8681} \\
+    & Energy ($T=2$) & 51,27 & 87,37 & 0,8065 & 0,8655 \\
+    & Energy ($T=3$) & 52,32 & 86,93 & 0,8021 & 0,8609 \\
+    & Energy ($T=4$) & 53,35 & 86,41 & 0,7965 & 0,8559 \\
+    & Energy ($T=5$) & 54,55 & 85,90 & 0,7913 & 0,8513 \\
+    \hline
+  \end{tabular}
+  \end{adjustbox}
+\end{table}
+
+Bảng~\ref{tab:temp_results} cho thấy hiệu năng của hai phương pháp thay đổi theo từng tập OOD.
+\begin{itemize}
+    \item \textbf{Kết quả cho thấy Energy Score hiệu quả hơn trên LSUN, trong khi MSP tốt hơn trên SVHN; với Tiny-ImageNet, hai phương pháp có hiệu năng khá sát nhau.}
+    \item \textbf{Khi temperature tăng, hiệu năng của Energy Score giảm trên cả ba tập OOD, cho thấy khả năng tách ID và OOD suy giảm.}
+\end{itemize}
+
+Quan sát các hình cho thấy Energy Score tách biệt ID và OOD tốt hơn MSP trên LSUN, còn MSP ổn định hơn trên SVHN. Tiny-ImageNet là tập OOD khó nhất do mức độ chồng lấp với ID rất lớn. Hình~\ref{fig:energy_dist} và Hình~\ref{fig:msp_dist} cho thấy OOD thường có energy cao hơn ID, nhưng độ tách biệt khác nhau giữa các tập dữ liệu. Hình~\ref{fig:sample_vis} minh họa hiện tượng overconfidence của softmax trên SVHN, trong khi Energy Score phản ánh tốt hơn sự khác biệt về độ lớn của vector logit. Hình~\ref{fig:temp_analysis}--\ref{fig:fpr_tpr} cho thấy temperature tăng làm giảm khả năng phân biệt ID và OOD, đồng thời ngưỡng phân loại ảnh hưởng trực tiếp đến TPR và FPR. Hình~\ref{fig:comparison_bar} tổng hợp kết quả cho thấy Energy vượt trội trên LSUN, MSP tốt hơn trên SVHN, còn Tiny-ImageNet cho kết quả gần tương đương. Kết quả cho thấy hiệu quả của từng scoring function phụ thuộc vào đặc trưng của từng tập OOD.
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts_combined/fig1_combined_energy_dist.png}
+  \caption{Phân phối Energy Score trên CIFAR-10 (ID) và 3 tập OOD (SVHN, LSUN, Tiny-ImageNet) tại các mức $T$ tối ưu tương ứng. Các đường nét đứt biểu diễn ngưỡng $\gamma_{\text{FPR95}}$.}
+  \label{fig:energy_dist}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts_combined/fig2_combined_msp_dist.png}
+  \caption{Phân phối MSP trên CIFAR-10 (ID) và 3 tập OOD. Phân phối của OOD có độ phân tán rộng hơn và confidence thấp hơn so với ID.}
+  \label{fig:msp_dist}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts/chart8_sample_id_vs_ood.png}
+  \caption{Bốn cặp mẫu thực nghiệm (tính toán tại $T=0{,}5$). Với SVHN, mô hình dự đoán sai nhãn nhưng confidence softmax vẫn ở mức tương đối cao, cho thấy hiện tượng overconfidence. Energy score phản ánh tốt hơn mức độ lớn tuyệt đối của vector logit.}
+  \label{fig:sample_vis}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{results/charts/temperature_analysis.png}
+  \caption{Đồ thị biểu diễn sự biến thiên của AUROC và FPR95 theo $T$ trên cặp CIFAR-10/SVHN, đối chiếu với đường cơ sở MSP.}
+  \label{fig:temp_analysis}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts_combined/fig3_combined_roc_curve.png}
+  \caption{ROC Curve so sánh Energy Score và MSP trên 3 tập dữ liệu OOD. Điểm đánh dấu tròn thể hiện vị trí FPR tương ứng với mức TPR=95\%.}
+  \label{fig:roc_curve}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts_combined/fig4_combined_pr_curve.png}
+  \caption{Precision-Recall Curve so sánh Energy Score và MSP trên 3 tập dữ liệu OOD.}
+  \label{fig:pr_curve}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts_combined/fig5_combined_fpr_tpr.png}
+  \caption{Sự biến thiên của FPR và TPR theo ngưỡng phân loại $\gamma$ của Energy Score trên 3 tập OOD. Đường nét đứt đứng biểu diễn ngưỡng $\gamma$ tối ưu thỏa mãn ràng buộc TPR $\ge$ 95\%.}
+  \label{fig:fpr_tpr}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{results/charts_combined/fig6_combined_bar_chart.png}
+  \caption{Biểu đồ cột so sánh tổng hợp 4 chỉ số hiệu suất giữa Energy Score và MSP baseline trên 3 tập OOD. Energy Score thể hiện sự vượt trội rõ rệt trên LSUN, trong khi MSP tốt hơn trên SVHN, và kết quả đan xen trên Tiny-ImageNet.}
+  \label{fig:comparison_bar}
+\end{figure}
+
+\subsection{Phân tích kết quả và giải thích hiện tượng}
+
+Phần này phân tích nguyên nhân dẫn đến sự khác biệt về hiệu năng giữa hai phương pháp trên từng tập dữ liệu.
+
+\subsubsection{Vì sao Energy tốt trên LSUN}
+LSUN có phân phối khác đáng kể so với CIFAR-10, do chủ yếu gồm ảnh phong cảnh và môi trường. Khi đưa ảnh LSUN qua WRN-28-10, các logit đầu ra thường thấp và không có lớp nào nổi bật rõ rệt.
+Ở LSUN, Energy Score với $T = 2$ cho kết quả tốt hơn MSP: FPR95 giảm từ 21,87\% xuống 15,26\%, AUROC tăng từ 92,97\% lên 95,92\%, Best F1 tăng từ 0,8764 lên 0,9053 và AUPR tăng từ 0,9076 lên 0,9493. Hình~\ref{fig:energy_dist} cho thấy rõ điều này: phân phối energy của LSUN tách biệt hẳn khỏi ID, và Hình~\ref{fig:roc_curve} cho thấy đường ROC của Energy nằm cao hơn đáng kể.
+Energy Score nhạy hơn với sự giảm đồng thời của toàn bộ logit vì được tính từ toàn bộ vector logit qua hàm log-sum-exp. Trong khi đó, MSP chỉ dựa trên xác suất sau softmax nên bỏ qua thông tin về độ lớn tuyệt đối của logit.
+
+\subsubsection{Vì sao MSP tốt hơn trên SVHN}
+SVHN là tập ảnh chữ số chụp ngoài đời thực. Mặc dù là OOD, các ảnh chữ số trong SVHN vẫn có đặc trưng hình học đơn giản và mang tính cục bộ rõ.
+Trên SVHN, MSP baseline đạt kết quả tốt hơn Energy Score ở tất cả các mức temperature khảo sát. Cụ thể, tại $T=0{,}5$, MSP đạt FPR95 = 24,82\% và AUROC = 91,68\%, trong khi Energy chỉ đạt FPR95 = 27,76\% và AUROC = 91,20\% (Bảng~\ref{tab:temp_results}). Hình~\ref{fig:temp_analysis} xác nhận xu hướng này: AUROC của Energy luôn thấp hơn MSP ở mọi mức $T$ trên SVHN.
+
+Biểu đồ phân phối Maximum Logit (Hình~\ref{fig:max_logit_dist}) cho thấy nhiều mẫu SVHN có max logit cao, gần với phân phối của CIFAR-10. Điều này có thể khiến Energy Score bị giảm độ phân tách, làm một số mẫu OOD dễ bị nhầm với in-distribution. Trực quan hóa t-SNE (Hình~\ref{fig:tsne_svhn}) cho thấy các mẫu SVHN phân tán rộng và có nhiều điểm nằm gần hoặc xen vào các cụm đặc trưng của CIFAR-10. Điều này cho thấy một số mẫu SVHN vẫn kích hoạt mạnh các đặc trưng mà WRN-28-10 đã học, làm giảm hiệu quả của Energy. Trong khi đó, MSP ít phụ thuộc vào biên độ tuyệt đối của logit hơn, nên cho kết quả ổn định hơn trên SVHN.
+
+\subsubsection{Vì sao Tiny-ImageNet khó cho cả hai}
+Tiny-ImageNet có nhiều ảnh đối tượng tự nhiên như con vật và xe cộ, nên gần CIFAR-10 hơn về mặt ngữ nghĩa.
+Trên Tiny-ImageNet, cả hai phương pháp đều gặp khó khăn và FPR95 vẫn ở mức cao, khoảng 50\%. Energy Score cải thiện AUROC từ 86,29\% lên 87,57\% và AUPR từ 0,8378 lên 0,8681, nhưng FPR95 vẫn chưa vượt MSP tại ngưỡng TPR = 95\%. Điều này cho thấy Energy cải thiện nhẹ về khả năng xếp hạng, nhưng chưa đủ để giảm FPR95 (Bảng~\ref{tab:temp_results}, Hình~\ref{fig:comparison_bar}).
+
+Nguyên nhân chủ yếu là do mức độ chồng lấn đặc trưng giữa Tiny-ImageNet và CIFAR-10 quá lớn. Trực quan hóa t-SNE (Hình~\ref{fig:tsne_tiny}) cho thấy không gian đặc trưng của CIFAR-10 và Tiny-ImageNet chồng lấp mạnh. Không giống một tập OOD lý tưởng, nhiều mẫu Tiny-ImageNet rơi vào vùng đặc trưng gần với CIFAR-10 do có sự tương đồng về nội dung hình ảnh. Phân phối Maximum Logit (Hình~\ref{fig:max_logit_dist}) cũng cho thấy mức chồng lấp lớn ở vùng logit trung bình đến cao giữa hai tập. Do đặc trưng của Tiny-ImageNet khá gần với CIFAR-10, cả Energy Score và MSP đều khó thiết lập ranh giới rõ ràng, nên FPR vẫn cao.
+
+Các chỉ số của Energy Score tại $T=0,5$ và $T=1$ trên Tiny-ImageNet trùng nhau. Khả năng là thứ tự xếp hạng của Energy Score giữa các mẫu gần như không đổi khi $T$ nhỏ. Khi đó, việc thay đổi $T$ từ 0,5 sang 1 chủ yếu ảnh hưởng đến biên độ điểm năng lượng hơn là thứ tự xếp hạng. Vì FPR95 và AUROC phụ thuộc nhiều vào thứ tự xếp hạng, nên hai mức $T$ này cho kết quả gần như giống nhau.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{results/charts_combined/fig7_max_logit_dist.png}
+  \caption{Phân phối Maximum Logit. SVHN có nhiều mẫu đạt max logit cao tương đương CIFAR-10, trong khi Tiny-ImageNet chồng lấn mạnh với vùng ID.}
+  \label{fig:max_logit_dist}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{results/charts_combined/fig8_tsne_svhn.png}
+  \caption{Trực quan hóa t-SNE của vector đặc trưng: CIFAR-10 vs SVHN. Các mẫu SVHN phân tán mạnh và có một lượng lớn xâm nhập sâu vào các cụm đặc trưng của ID.}
+  \label{fig:tsne_svhn}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\linewidth]{results/charts_combined/fig9_tsne_tiny.png}
+  \caption{Trực quan hóa t-SNE của vector đặc trưng: CIFAR-10 vs Tiny-ImageNet. Sự chồng lấn không gian đặc trưng giữa hai tập dữ liệu là rất lớn do tương đồng ngữ nghĩa.}
+  \label{fig:tsne_tiny}
+\end{figure}
+% ════════════════════════════════════════════════════════════════════
+\section{Kết luận và Hướng phát triển}
+
+\subsection{Kết luận}
+
+Báo cáo này tái thực nghiệm phương pháp phát hiện OOD dùng energy score của Liu et al.~\cite{energyood} trên mô hình WideResNet-28-10 huấn luyện với CIFAR-10, đối chiếu với MSP baseline trên ba tập OOD: SVHN, LSUN và Tiny-ImageNet.
+
+Kết quả cho thấy mỗi scoring function đều có điểm mạnh riêng. Energy Score cải thiện đáng kể so với MSP trên LSUN (FPR95: 21,87\% $\rightarrow$ 15,26\%; AUROC: 92,97\% $\rightarrow$ 95,92\%), nhưng kém hơn trên SVHN (FPR95: 27,76\% so với 24,82\% của MSP tại $T=0{,}5$). Trên Tiny-ImageNet, hai phương pháp có hiệu năng tương đương, với FPR95 đều ở mức cao (khoảng 50\%). Temperature đóng vai trò quan trọng: khi $T$ tăng, khả năng phân biệt của Energy Score giảm dần trên cả ba tập OOD.
+
+Điều rút ra là hiệu quả của một scoring function phụ thuộc mạnh vào đặc trưng của tập OOD, thay vì một phương pháp luôn trội hơn trong mọi tình huống. Energy Score phát huy lợi thế khi dữ liệu OOD có phân phối khác biệt lớn so với ID (LSUN), nhưng dễ bị ảnh hưởng khi OOD vẫn kích hoạt được các đặc trưng đã học của mô hình (SVHN). Khi đánh giá OOD, nên nhìn cả bản chất dữ liệu lẫn nhiều chỉ số cùng lúc.
+
+Hạn chế lớn nhất của nghiên cứu là phạm vi thực nghiệm còn hẹp: mới dừng ở một kiến trúc (WRN-28-10), một tập ID (CIFAR-10), và chưa triển khai fine-tune với energy-bounded learning.
+
+\subsection{Hướng phát triển}
+
+Từ kết quả này, có thể mở rộng theo vài hướng sau.
+
+\textbf{Đánh giá trên các tập OOD khó hơn.}
+Kết quả trên SVHN và Tiny-ImageNet cho thấy Energy Score chưa vượt trội đồng đều trên mọi tập OOD. Việc bổ sung các tập OOD có đặc trưng gần hơn với in-distribution, như CIFAR-100, Textures, iSUN hoặc Places365, sẽ giúp đánh giá rõ hơn giới hạn của từng scoring function.
+
+\textbf{Thử fine-tune với energy-bounded learning.}
+Thực nghiệm hiện tại chỉ dùng Energy Score như một scoring function thuần túy. Bước tiếp theo là fine-tune mô hình với hàm mục tiêu $\mathcal{L}_{\text{energy}}$, nhằm ràng buộc phân phối năng lượng của ID và OOD trong quá trình huấn luyện. Theo kết quả gốc~\cite{energyood}, bước này có thể giảm FPR95 thêm khoảng 18 điểm phần trăm và cần được kiểm chứng lại trong cùng cài đặt thực nghiệm.
+
+\textbf{Thử trên kiến trúc và bài toán khác.}
+Thực nghiệm hiện tại giới hạn ở WRN-28-10 với bài toán phân loại ảnh.
+Đánh giá Energy Score trên các kiến trúc hiện đại hơn như Vision Transformer
+(ViT) hoặc ResNet-50, hay mở rộng sang các tác vụ như phát hiện đối tượng
+và phân đoạn ngữ nghĩa, sẽ cho phép kiểm tra tính tổng quát của phương pháp
+trong các bối cảnh ứng dụng thực tế hơn.
+
+\textbf{Kết hợp thêm với các cách phát hiện OOD khác.}
+Energy Score có thể được kết hợp với các phương pháp bổ trợ như ODIN
+(temperature scaling + input perturbation) hoặc Mahalanobis distance để
+xây dựng một hệ thống phát hiện OOD đa tầng, tận dụng điểm mạnh của
+từng phương pháp trên các dạng OOD khác nhau.
+
+% ════════════════════════════════════════════════════════════════════
+\newpage
+\begin{thebibliography}{9}
+
+\bibitem{energyood}
+Weitang Liu, Xiaoyun Wang, John Owens, Yixuan Li,
+\textit{Energy-based Out-of-distribution Detection},
+Advances in Neural Information Processing Systems (NeurIPS), 2020.
+
+\end{thebibliography}
+
+\end{document}
+
