@@ -48,7 +48,18 @@ pip install torch torchvision numpy matplotlib seaborn scikit-learn tqdm scipy
 ## Hướng dẫn chạy và tạo các file hình ảnh kết quả
 
 ### Bước 1: Chuẩn bị
-Đảm bảo bạn đã tải file trọng số `wrn28_10_cifar10.pth` và đặt nó ở thư mục gốc của dự án. Khi chạy các kịch bản, các tập dữ liệu sẽ tự động được tải xuống thư mục `data/` (nếu chưa có).
+Tải file trọng số mô hình `wrn28_10_cifar10.pth` từ [Releases v1.0](https://github.com/zerosuNLD/energy-ood-detection/releases/tag/v1.0) và đặt nó ở thư mục gốc của dự án.
+Bạn có thể tải nhanh bằng dòng lệnh sau:
+
+```bash
+# Tải bằng wget (Linux/Mac)
+wget https://github.com/zerosuNLD/energy-ood-detection/releases/download/v1.0/wrn28_10_cifar10.pth
+
+# Hoặc dùng curl (Hỗ trợ cả Windows/Linux/Mac)
+curl -L -o wrn28_10_cifar10.pth https://github.com/zerosuNLD/energy-ood-detection/releases/download/v1.0/wrn28_10_cifar10.pth
+```
+
+Khi chạy các kịch bản, các tập dữ liệu sẽ tự động được tải xuống thư mục `data/` (nếu chưa có).
 
 ### Bước 2: Sinh các hình ảnh biểu đồ
 Để tạo ra các hình ảnh, bạn chỉ cần chạy lần lượt các kịch bản xuất (export). Mỗi kịch bản sẽ thực hiện tính toán và lưu file hình ảnh `.png` vào thư mục tương ứng trong `results/`.
